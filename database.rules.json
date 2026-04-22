@@ -1,0 +1,26 @@
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['state', 'lastChanged'])",
+        "state": {
+          ".validate": "newData.isString() && (newData.val() === 'online' || newData.val() === 'offline')"
+        },
+        "lastChanged": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "typing": {
+      "$pairId": {
+        ".read": "auth != null && $pairId.contains(auth.uid)",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && $pairId.contains(auth.uid)",
+          ".validate": "newData.isNumber() || newData.val() === null"
+        }
+      }
+    }
+  }
+}

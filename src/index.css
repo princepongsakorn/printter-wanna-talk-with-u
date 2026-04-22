@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased font-sans;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  input,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  html.pwa-mode,
+  html.pwa-mode body {
+    height: 100%;
+  }
+  html.pwa-mode body {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+  html.pwa-mode #root {
+    height: var(--app-height, 100dvh);
+    width: 100%;
+    overflow: hidden;
+    transform: translateY(var(--app-top, 0px));
+  }
+}
+
+@layer utilities {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .scroll-smooth-y {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Hide scrollbar for a cleaner chat feel */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

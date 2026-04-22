@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function pairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    // Users: readable by any signed-in user (needed to look up friends by email).
+    // Only the user themselves can write their own profile doc.
+    // NOTE: email verification against auth token is relaxed here to allow
+    // anonymous users (no email). Phase 2 will tighten this per-provider.
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isSelf(uid)
+        && request.resource.data.uid == uid;
+      allow delete: if false;
+    }
+
+    // Friendships: one doc per pair of users, id = sorted uid pair.
+    //
+    // The `addedBy` map drives asymmetric friendship:
+    //   addedBy[uid] == Timestamp -> that user has added the other (can send).
+    //   addedBy[uid] == null / missing -> that user has not added back yet.
+    //
+    // Legacy docs with no `addedBy` field are treated as "both accepted".
+    match /friendships/{pairDocId} {
+      allow get: if isSignedIn()
+        && (resource == null || request.auth.uid in resource.data.users);
+
+      allow list: if isSignedIn() && request.auth.uid in resource.data.users;
+
+      // Create: caller must be one of the two users, pairId must be sorted,
+      // and caller must set addedBy[self] to a non-null value (initiating friend).
+      allow create: if isSignedIn()
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 2
+        && request.auth.uid in request.resource.data.users
+        && pairDocId == pairId(
+          request.resource.data.users[0],
+          request.resource.data.users[1]
+        )
+        && request.resource.data.addedBy[request.auth.uid] != null;
+
+      // Update: must be participant. The OTHER user's addedBy entry cannot be
+      // changed by me (asymmetric: each user controls their own flag).
+      //   - Legacy doc (no addedBy field) is exempt so the first write migrates it.
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.users
+        && otherAddedByUnchanged();
+
+      function otherAddedByUnchanged() {
+        let otherUid = resource.data.users[0] == request.auth.uid
+          ? resource.data.users[1]
+          : resource.data.users[0];
+        return !('addedBy' in resource.data.keys())
+          || resource.data.addedBy.get(otherUid, null)
+             == request.resource.data.addedBy.get(otherUid, null);
+      }
+
+      allow delete: if false;
+    }
+
+    // Chat messages: only participants of the friendship can read/write.
+    // Send permission additionally requires addedBy[self] to be a timestamp.
+    match /chats/{pairDocId}/messages/{messageId} {
+      function friendship() {
+        return get(/databases/$(database)/documents/friendships/$(pairDocId)).data;
+      }
+      function isFriendParticipant() {
+        return isSignedIn()
+          && exists(/databases/$(database)/documents/friendships/$(pairDocId))
+          && request.auth.uid in friendship().users;
+      }
+      function canSendInFriendship() {
+        let f = friendship();
+        // Legacy doc (no addedBy) -> implicit both-accepted.
+        return !('addedBy' in f.keys())
+          || f.addedBy.get(request.auth.uid, null) != null;
+      }
+
+      allow read: if isFriendParticipant();
+
+      allow create: if isFriendParticipant()
+        && canSendInFriendship()
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 4000;
+
+      // Update: allowed only to modify readBy (text/sender/createdAt preserved).
+      allow update: if isFriendParticipant()
+        && request.resource.data.senderUid == resource.data.senderUid
+        && request.resource.data.text == resource.data.text
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+  }
+}
