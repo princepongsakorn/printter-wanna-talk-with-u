@@ -36,21 +36,38 @@ export async function sendMessage(me: User, otherUid: string, text: string): Pro
   }).catch((err) => console.warn("lastMessage update failed", err));
 }
 
+/**
+ * Subscribe to the most recent `msgLimit` messages in a chat. The callback
+ * receives messages in ASCENDING order (oldest first, newest last), plus a
+ * boolean `reachedTop` telling the caller whether the subscription has
+ * already covered the entire history (i.e. no older messages exist).
+ *
+ * Pagination strategy: we query with `orderBy("createdAt", "desc")` + a
+ * `limit(msgLimit)`, then reverse in-memory. To load older messages the
+ * caller bumps `msgLimit` and re-subscribes — which keeps realtime updates
+ * flowing for every currently-visible message (important for read
+ * receipts and edits), at the cost of a single Firestore re-subscribe per
+ * "load older" action.
+ *
+ * `reachedTop === true` when Firestore returned fewer than `msgLimit`
+ * documents, which means we've already loaded the entire chat history.
+ */
 export function subscribeMessages(
   pairId: string,
-  cb: (items: Message[]) => void,
-  max = 200,
+  cb: (items: Message[], reachedTop: boolean) => void,
+  msgLimit = 30,
 ): () => void {
   const q = query(
     collection(db, "chats", pairId, "messages"),
-    orderBy("createdAt", "asc"),
-    limit(max),
+    orderBy("createdAt", "desc"),
+    limit(msgLimit),
   );
   return onSnapshot(q, (snap) => {
-    const items = snap.docs.map(
-      (d) => ({ id: d.id, ...(d.data() as Omit<Message, "id">) }) as Message,
-    );
-    cb(items);
+    const items = snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<Message, "id">) }) as Message)
+      .reverse();
+    const reachedTop = snap.docs.length < msgLimit;
+    cb(items, reachedTop);
   });
 }
 

@@ -89,7 +89,7 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-full items-center justify-center p-6 safe-top safe-bottom">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-500 text-white">
             <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden>
@@ -97,20 +97,20 @@ export function LoginPage() {
             </svg>
           </div>
           <h1 className="text-xl font-semibold">ยินดีต้อนรับ</h1>
-          <p className="mt-1 text-sm text-slate-500">เลือกวิธีเข้าใช้งาน</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">เลือกวิธีเข้าใช้งาน</p>
         </div>
 
-        <label className="mb-4 flex select-none items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200">
+        <label className="mb-4 flex select-none items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
           <input
             type="checkbox"
             checked={keepLoggedIn}
             onChange={(e) => setKeepLoggedIn(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-500"
+            className="h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-500 dark:border-slate-600 dark:bg-slate-700"
           />
-          <span className="flex-1 text-sm text-slate-700">
+          <span className="flex-1 text-sm text-slate-700 dark:text-slate-300">
             ให้ระบบจำการเข้าสู่ระบบ
           </span>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-slate-400 dark:text-slate-500">
             {keepLoggedIn ? "อยู่ข้ามการปิด tab" : "หายเมื่อปิด tab"}
           </span>
         </label>
@@ -119,7 +119,7 @@ export function LoginPage() {
           type="button"
           onClick={handleGoogleSignIn}
           disabled={submitting}
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
         >
           <GoogleIcon className="h-5 w-5" />
           <span>
@@ -127,13 +127,13 @@ export function LoginPage() {
           </span>
         </button>
 
-        <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
-          <div className="h-px flex-1 bg-slate-200" />
+        <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
+          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
           <span>หรือ</span>
-          <div className="h-px flex-1 bg-slate-200" />
+          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
 
-        <div className="mb-3 flex rounded-xl bg-slate-100 p-1">
+        <div className="mb-3 flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
           <button
             type="button"
             onClick={() => {
@@ -142,8 +142,8 @@ export function LoginPage() {
             }}
             className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
               emailMode === "signin"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100"
+                : "text-slate-500 dark:text-slate-400"
             }`}
           >
             เข้าสู่ระบบ
@@ -156,8 +156,8 @@ export function LoginPage() {
             }}
             className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
               emailMode === "signup"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100"
+                : "text-slate-500 dark:text-slate-400"
             }`}
           >
             สมัครสมาชิก
@@ -175,7 +175,7 @@ export function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="อีเมล หรือ username"
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
           <input
             type="password"
@@ -185,7 +185,7 @@ export function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)"
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
           {emailMode === "signup" && (
             <input
@@ -194,13 +194,13 @@ export function LoginPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="ชื่อที่แสดง (ไม่ใส่ก็ได้ ระบบจะใช้ username)"
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
             />
           )}
           <button
             type="submit"
             disabled={submitting || !email || !password}
-            className="w-full rounded-xl bg-brand-500 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60"
+            className="w-full rounded-xl bg-brand-500 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60 dark:shadow-none"
           >
             {submittingEmail
               ? emailMode === "signup"
@@ -211,20 +211,20 @@ export function LoginPage() {
                 : "เข้าสู่ระบบ"}
           </button>
           {emailMode === "signup" && (
-            <p className="pt-1 text-[11px] text-slate-400">
+            <p className="pt-1 text-[11px] text-slate-400 dark:text-slate-500">
               username: a-z, 0-9, _ . - ความยาว 3–20 ตัว (หรือจะใช้อีเมลก็ได้)
             </p>
           )}
         </form>
 
-        <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
-          <div className="h-px flex-1 bg-slate-200" />
+        <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
+          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
           <span>หรือ</span>
-          <div className="h-px flex-1 bg-slate-200" />
+          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
 
         <form onSubmit={handleAnonSignIn} className="space-y-2">
-          <label htmlFor="nickname" className="block text-sm font-medium text-slate-700">
+          <label htmlFor="nickname" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
             เข้าใช้แบบชั่วคราว
           </label>
           <input
@@ -235,22 +235,22 @@ export function LoginPage() {
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             placeholder="ตั้งชื่อเล่น"
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
           <button
             type="submit"
             disabled={submitting || !nickname.trim()}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
           >
             {submittingAnon ? "กำลังเข้าใช้..." : "เข้าใช้โดยไม่ต้องล็อกอิน"}
           </button>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             session จะหายเมื่อปิด tab — เหมาะสำหรับการใช้งานชั่วคราว
           </p>
         </form>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+          <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/60 dark:text-rose-200" role="alert">
             {error}
           </p>
         )}

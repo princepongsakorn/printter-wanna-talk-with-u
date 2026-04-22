@@ -3,7 +3,12 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
+import { ThemeProvider, initThemeOnDocument } from "./contexts/ThemeContext";
 import "./index.css";
+
+// Apply the persisted theme BEFORE React renders to avoid a flash of the
+// wrong palette on cold load.
+initThemeOnDocument();
 
 // PWA-only keyboard fix:
 // Only apply body lock + visualViewport sync in PWA standalone mode.
@@ -36,9 +41,11 @@ if (isPWA) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );
