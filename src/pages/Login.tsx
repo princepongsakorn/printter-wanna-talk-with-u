@@ -3,11 +3,26 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Spinner } from "../components/Spinner";
 
+type EmailMode = "signin" | "signup";
+
 export function LoginPage() {
-  const { user, loading, signInWithGoogle, signInAnonymouslyWithNickname } = useAuth();
+  const {
+    user,
+    loading,
+    signInWithGoogle,
+    signInAnonymouslyWithNickname,
+    signInWithEmail,
+    signUpWithEmail,
+  } = useAuth();
   const [submittingGoogle, setSubmittingGoogle] = useState(false);
   const [submittingAnon, setSubmittingAnon] = useState(false);
+  const [submittingEmail, setSubmittingEmail] = useState(false);
   const [nickname, setNickname] = useState("");
+  const [emailMode, setEmailMode] = useState<EmailMode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [keepLoggedIn, setKeepLoggedIn] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const location = useLocation() as { state?: { from?: { pathname?: string } } };
 
@@ -32,7 +47,7 @@ export function LoginPage() {
     setSubmittingGoogle(true);
     setError(null);
     try {
-      await signInWithGoogle();
+      await signInWithGoogle(keepLoggedIn);
     } catch (e) {
       setError(e instanceof Error ? e.message : "เข้าสู่ระบบไม่สำเร็จ");
     } finally {
@@ -53,7 +68,24 @@ export function LoginPage() {
     }
   };
 
-  const submitting = submittingGoogle || submittingAnon;
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingEmail(true);
+    setError(null);
+    try {
+      if (emailMode === "signup") {
+        await signUpWithEmail(email, password, displayName, keepLoggedIn);
+      } else {
+        await signInWithEmail(email, password, keepLoggedIn);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ไม่สำเร็จ");
+    } finally {
+      setSubmittingEmail(false);
+    }
+  };
+
+  const submitting = submittingGoogle || submittingAnon || submittingEmail;
 
   return (
     <div className="flex min-h-full items-center justify-center p-6 safe-top safe-bottom">
@@ -68,6 +100,21 @@ export function LoginPage() {
           <p className="mt-1 text-sm text-slate-500">เลือกวิธีเข้าใช้งาน</p>
         </div>
 
+        <label className="mb-4 flex select-none items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200">
+          <input
+            type="checkbox"
+            checked={keepLoggedIn}
+            onChange={(e) => setKeepLoggedIn(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-500"
+          />
+          <span className="flex-1 text-sm text-slate-700">
+            ให้ระบบจำการเข้าสู่ระบบ
+          </span>
+          <span className="text-[11px] text-slate-400">
+            {keepLoggedIn ? "อยู่ข้ามการปิด tab" : "หายเมื่อปิด tab"}
+          </span>
+        </label>
+
         <button
           type="button"
           onClick={handleGoogleSignIn}
@@ -79,6 +126,96 @@ export function LoginPage() {
             {submittingGoogle ? "กำลังเข้าสู่ระบบ..." : "ดำเนินการต่อด้วย Google"}
           </span>
         </button>
+
+        <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span>หรือ</span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <div className="mb-3 flex rounded-xl bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setEmailMode("signin");
+              setError(null);
+            }}
+            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+              emailMode === "signin"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500"
+            }`}
+          >
+            เข้าสู่ระบบ
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEmailMode("signup");
+              setError(null);
+            }}
+            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+              emailMode === "signup"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500"
+            }`}
+          >
+            สมัครสมาชิก
+          </button>
+        </div>
+
+        <form onSubmit={handleEmailSubmit} className="space-y-2">
+          <input
+            type="text"
+            inputMode="email"
+            autoComplete={emailMode === "signup" ? "username" : "username"}
+            autoCapitalize="none"
+            autoCorrect="off"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="อีเมล หรือ username"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+          />
+          <input
+            type="password"
+            autoComplete={emailMode === "signup" ? "new-password" : "current-password"}
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+          />
+          {emailMode === "signup" && (
+            <input
+              type="text"
+              maxLength={30}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="ชื่อที่แสดง (ไม่ใส่ก็ได้ ระบบจะใช้ username)"
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
+            />
+          )}
+          <button
+            type="submit"
+            disabled={submitting || !email || !password}
+            className="w-full rounded-xl bg-brand-500 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60"
+          >
+            {submittingEmail
+              ? emailMode === "signup"
+                ? "กำลังสมัคร..."
+                : "กำลังเข้าสู่ระบบ..."
+              : emailMode === "signup"
+                ? "สมัครสมาชิก"
+                : "เข้าสู่ระบบ"}
+          </button>
+          {emailMode === "signup" && (
+            <p className="pt-1 text-[11px] text-slate-400">
+              username: a-z, 0-9, _ . - ความยาว 3–20 ตัว (หรือจะใช้อีเมลก็ได้)
+            </p>
+          )}
+        </form>
 
         <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
           <div className="h-px flex-1 bg-slate-200" />

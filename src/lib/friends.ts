@@ -7,6 +7,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
@@ -33,29 +34,37 @@ function userInfoFromUser(u: User): FriendshipUserInfo {
 }
 
 /**
- * Add a user (by email) as a friend. Creates or updates the friendship doc
- * and sets `addedBy[me.uid] = now`. Does NOT set addedBy for the other user —
- * they must add back (or click "Accept friend") before they can send messages.
+ * Add a user (by email OR username) as a friend. Creates or updates the
+ * friendship doc and sets `addedBy[me.uid] = now`. Does NOT set addedBy for
+ * the other user — they must add back (or click "Accept friend") before they
+ * can send messages.
+ *
+ * Input detection: contains "@" → search by emailLower, else → usernameLower.
  *
  * For legacy docs (no `addedBy` field), migrates by filling BOTH entries
  * with a timestamp, preserving the implicit "both accepted" semantic.
  *
  * Returns the pairId so the caller can navigate to /chat/:pairId.
  */
-export async function addFriend(me: User, targetEmailRaw: string): Promise<string> {
-  const targetEmail = targetEmailRaw.trim().toLowerCase();
-  if (!targetEmail) throw new FriendError("กรุณากรอกอีเมล", "unknown");
-  if (me.email && targetEmail === me.email.toLowerCase()) {
-    throw new FriendError("ไม่สามารถเพิ่มตัวเองเป็นเพื่อนได้", "self");
-  }
+export async function addFriend(me: User, identifierRaw: string): Promise<string> {
+  const identifier = identifierRaw.trim().toLowerCase();
+  if (!identifier) throw new FriendError("กรุณากรอกอีเมล หรือ username", "unknown");
 
-  const usersQ = query(collection(db, "users"), where("emailLower", "==", targetEmail));
+  const searchByEmail = identifier.includes("@");
+  const field = searchByEmail ? "emailLower" : "usernameLower";
+  const usersQ = query(collection(db, "users"), where(field, "==", identifier));
   const usersSnap = await getDocs(usersQ);
   if (usersSnap.empty) {
-    throw new FriendError("ไม่พบผู้ใช้ตามอีเมลนี้", "not-found");
+    throw new FriendError(
+      searchByEmail ? "ไม่พบผู้ใช้ตามอีเมลนี้" : "ไม่พบผู้ใช้ตาม username นี้",
+      "not-found",
+    );
   }
   const targetDoc = usersSnap.docs[0];
   const targetUid = targetDoc.id;
+  if (targetUid === me.uid) {
+    throw new FriendError("ไม่สามารถเพิ่มตัวเองเป็นเพื่อนได้", "self");
+  }
   const targetData = targetDoc.data();
 
   const pairId = pairIdOf(me.uid, targetUid);
@@ -64,7 +73,10 @@ export async function addFriend(me: User, targetEmailRaw: string): Promise<strin
 
   const myInfo = userInfoFromUser(me);
   const theirInfo: FriendshipUserInfo = {
-    displayName: targetData.displayName ?? targetEmail.split("@")[0],
+    displayName:
+      targetData.displayName ??
+      targetData.username ??
+      (searchByEmail ? identifier.split("@")[0] : identifier),
     photoURL: targetData.photoURL ?? null,
     email: targetData.email ?? null,
     isAnonymous: !!targetData.isAnonymous,
@@ -87,14 +99,12 @@ export async function addFriend(me: User, targetEmailRaw: string): Promise<strin
         { merge: true },
       );
     } else {
-      await setDoc(
-        ref,
-        {
-          [`addedBy.${me.uid}`]: serverTimestamp(),
-          [`userInfo.${me.uid}`]: myInfo,
-        },
-        { merge: true },
-      );
+      // Use updateDoc so `addedBy.<uid>` is parsed as a nested field path.
+      // setDoc+merge would treat the dotted key as a literal top-level field.
+      await updateDoc(ref, {
+        [`addedBy.${me.uid}`]: serverTimestamp(),
+        [`userInfo.${me.uid}`]: myInfo,
+      });
     }
   } else {
     await setDoc(ref, {
@@ -141,14 +151,12 @@ export async function acceptFriendship(me: User, pairId: string): Promise<void> 
       { merge: true },
     );
   } else {
-    await setDoc(
-      ref,
-      {
-        [`addedBy.${me.uid}`]: serverTimestamp(),
-        [`userInfo.${me.uid}`]: userInfoFromUser(me),
-      },
-      { merge: true },
-    );
+    // Use updateDoc so `addedBy.<uid>` is parsed as a nested field path.
+    // setDoc+merge would treat the dotted key as a literal top-level field.
+    await updateDoc(ref, {
+      [`addedBy.${me.uid}`]: serverTimestamp(),
+      [`userInfo.${me.uid}`]: userInfoFromUser(me),
+    });
   }
 }
 

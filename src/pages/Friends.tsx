@@ -12,6 +12,7 @@ import {
 import { subscribePresence, type PresenceState } from "../lib/presence";
 import { canSend, hasAccepted, type Friendship } from "../lib/types";
 import { formatChatListTimestamp } from "../lib/time";
+import { isSyntheticEmail, usernameFromSyntheticEmail } from "../lib/username";
 
 type Tab = "chats" | "add";
 
@@ -41,7 +42,11 @@ export function FriendsPage() {
             <Avatar name={user.displayName ?? user.email ?? "me"} photoURL={user.photoURL} size={36} />
             <div className="leading-tight">
               <div className="text-sm font-semibold">{user.displayName ?? "คุณ"}</div>
-              <div className="text-xs text-slate-500">{user.email ?? "anonymous"}</div>
+              <div className="text-xs text-slate-500">
+                {isSyntheticEmail(user.email)
+                  ? `@${usernameFromSyntheticEmail(user.email)}`
+                  : (user.email ?? "anonymous")}
+              </div>
             </div>
           </div>
           <button
@@ -210,7 +215,7 @@ function StatusChip({
 
 function AddFriendForm({ onAdded }: { onAdded: (pairId: string) => void }) {
   const { user } = useAuth();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -220,8 +225,8 @@ function AddFriendForm({ onAdded }: { onAdded: (pairId: string) => void }) {
     setSubmitting(true);
     setMessage(null);
     try {
-      const pairId = await addFriend(user, email);
-      setEmail("");
+      const pairId = await addFriend(user, identifier);
+      setIdentifier("");
       setMessage({ kind: "ok", text: "เพิ่มเพื่อนแล้ว เริ่มคุยได้เลย" });
       onAdded(pairId);
     } catch (err) {
@@ -240,27 +245,28 @@ function AddFriendForm({ onAdded }: { onAdded: (pairId: string) => void }) {
   return (
     <div className="p-4">
       <form onSubmit={handleSubmit} className="rounded-2xl bg-slate-50 p-4">
-        <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-          อีเมลของเพื่อน
+        <label htmlFor="friend-identifier" className="block text-sm font-medium text-slate-700">
+          อีเมล หรือ username ของเพื่อน
         </label>
         <p className="mt-1 text-xs text-slate-500">
-          อีกฝ่ายต้องลงทะเบียนในระบบแล้ว (ผ่าน Google หรือ anonymous)
+          อีกฝ่ายต้องลงทะเบียนในระบบแล้ว (Google / อีเมล / username / anonymous)
           กดเพิ่มแล้วคุณส่งข้อความได้ทันทีโดยไม่ต้องรออีกฝ่ายตอบรับ
         </p>
         <input
-          id="email"
-          type="email"
+          id="friend-identifier"
+          type="text"
           inputMode="email"
-          autoComplete="email"
+          autoCapitalize="none"
+          autoCorrect="off"
           required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="someone@gmail.com"
+          value={identifier}
+          onChange={(e) => setIdentifier(e.target.value)}
+          placeholder="someone@gmail.com หรือ username"
           className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ring-brand-500 focus:ring-2"
         />
         <button
           type="submit"
-          disabled={submitting || !email}
+          disabled={submitting || !identifier}
           className="mt-3 w-full rounded-xl bg-brand-500 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60"
         >
           {submitting ? "กำลังเพิ่ม..." : "เพิ่มเพื่อน"}
