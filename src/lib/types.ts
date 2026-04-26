@@ -35,6 +35,10 @@ export type Friendship = {
     text: string;
     senderUid: string;
     createdAt: Timestamp;
+    /** Optional id of the source message — used as a dedup key for notifications.
+     * Older docs written before this field was added may omit it; callers should
+     * fall back to (sender, text, createdAt) when missing. */
+    messageId?: string;
   };
   createdAt: Timestamp;
 };

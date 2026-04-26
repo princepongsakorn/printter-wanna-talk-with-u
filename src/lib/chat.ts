@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   doc,
   limit,
@@ -7,18 +6,44 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
 import { pairIdOf, type Message } from "./types";
 
-export async function sendMessage(me: User, otherUid: string, text: string): Promise<void> {
+/**
+ * Generate a new message doc reference with a client-side ID. Used for the
+ * optimistic-send pattern: we want to know the message's final ID *before*
+ * the network round-trip so the UI can render a pending bubble immediately
+ * and dedup against the server snapshot when it arrives.
+ */
+export function newMessageRef(pairId: string) {
+  return doc(collection(db, "chats", pairId, "messages"));
+}
+
+/**
+ * Send a message with a pre-generated ID. The caller is expected to have
+ * already added an optimistic placeholder with the same id so the UI shows
+ * "กำลังส่ง" without waiting on the network. On resolve, the Firestore
+ * snapshot listener will pick up the real doc and the placeholder is
+ * removed by the caller.
+ *
+ * Throws on permission-denied / offline-write-failure so the caller can
+ * surface a "ส่งไม่สำเร็จ" state.
+ */
+export async function sendMessageWithId(
+  me: User,
+  otherUid: string,
+  messageId: string,
+  text: string,
+): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
   const pairId = pairIdOf(me.uid, otherUid);
 
-  const msgRef = await addDoc(collection(db, "chats", pairId, "messages"), {
+  await setDoc(doc(db, "chats", pairId, "messages", messageId), {
     senderUid: me.uid,
     text: trimmed,
     createdAt: serverTimestamp(),
@@ -31,7 +56,7 @@ export async function sendMessage(me: User, otherUid: string, text: string): Pro
       text: trimmed,
       senderUid: me.uid,
       createdAt: serverTimestamp(),
-      messageId: msgRef.id,
+      messageId,
     },
   }).catch((err) => console.warn("lastMessage update failed", err));
 }

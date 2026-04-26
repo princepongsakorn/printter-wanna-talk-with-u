@@ -14,6 +14,11 @@ import { subscribePresence, type PresenceState } from "../lib/presence";
 import { canSend, hasAccepted, type Friendship } from "../lib/types";
 import { formatChatListTimestamp } from "../lib/time";
 import { isSyntheticEmail, usernameFromSyntheticEmail } from "../lib/username";
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  type NotificationPermissionState,
+} from "../lib/notifications";
 
 type Tab = "chats" | "add";
 
@@ -80,7 +85,10 @@ export function FriendsPage() {
             <Spinner />
           </div>
         ) : tab === "chats" ? (
-          <ChatList friendships={friendships} myUid={user.uid} />
+          <>
+            <NotificationBanner />
+            <ChatList friendships={friendships} myUid={user.uid} />
+          </>
         ) : (
           <AddFriendForm
             onAdded={(pairId) => {
@@ -290,6 +298,89 @@ function AddFriendForm({ onAdded }: { onAdded: (pairId: string) => void }) {
           </p>
         )}
       </form>
+    </div>
+  );
+}
+
+const NOTIF_DISMISSED_KEY = "chat:notif-dismissed";
+
+function NotificationBanner() {
+  const [perm, setPerm] = useState<NotificationPermissionState>(() =>
+    getNotificationPermission(),
+  );
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(NOTIF_DISMISSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [busy, setBusy] = useState(false);
+
+  // iOS Safari flips 'Notification' into existence once the PWA is
+  // installed, so re-check on visibility change.
+  useEffect(() => {
+    const onVis = () => setPerm(getNotificationPermission());
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  if (perm !== "default") return null;
+  if (dismissed) return null;
+
+  const handleEnable = async () => {
+    setBusy(true);
+    try {
+      const next = await requestNotificationPermission();
+      setPerm(next);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDismiss = () => {
+    try {
+      window.localStorage.setItem(NOTIF_DISMISSED_KEY, "1");
+    } catch {
+      /* storage disabled — session-only dismissal is fine */
+    }
+    setDismissed(true);
+  };
+
+  return (
+    <div className="mx-3 mt-3 rounded-xl bg-brand-50 p-3 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:ring-brand-500/20">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-500/10 text-brand-600 dark:text-brand-500">
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+            <path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6V11a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+            เปิดแจ้งเตือนข้อความใหม่
+          </div>
+          <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+            เพื่อรู้ทันทีเมื่อมีข้อความใหม่ — ใช้งานบนเครื่องนี้และ browser นี้เท่านั้น
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={handleEnable}
+              disabled={busy}
+              className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-60"
+            >
+              {busy ? "กำลังขอ..." : "เปิดแจ้งเตือน"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            >
+              ไม่ใช่ตอนนี้
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

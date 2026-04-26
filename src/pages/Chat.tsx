@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, type Timestamp } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
-import { markRead, sendMessage, subscribeMessages } from "../lib/chat";
+import { markRead, newMessageRef, sendMessageWithId, subscribeMessages } from "../lib/chat";
 import { acceptFriendship, otherUidOf } from "../lib/friends";
 import {
   formatLastSeen,
@@ -22,6 +22,34 @@ import { Spinner } from "../components/Spinner";
 
 const PAGE_SIZE = 30;
 
+/**
+ * A pending (optimistic) outgoing message that hasn't yet been confirmed by
+ * the Firestore snapshot. Carries the same shape as Message but with optional
+ * server fields and an extra `pending` discriminator.
+ */
+type PendingMessage = {
+  id: string;
+  senderUid: string;
+  text: string;
+  /** Local timestamp used purely for ordering in the UI before the server
+   * timestamp resolves. Not persisted. */
+  localCreatedAt: number;
+  status: "sending" | "failed";
+};
+
+/**
+ * What the MessagesList renders — either a real (server) Message or a
+ * pending one. Status badges branch off the optional `pending` field.
+ */
+type DisplayMessage = {
+  id: string;
+  senderUid: string;
+  text: string;
+  createdAt?: Timestamp;
+  readBy?: Record<string, Timestamp>;
+  pending?: { status: "sending" | "failed" };
+};
+
 export function ChatPage() {
   const { pairId = "" } = useParams<{ pairId: string }>();
   const { user } = useAuth();
@@ -34,7 +62,7 @@ export function ChatPage() {
   const [reachedTop, setReachedTop] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState<PendingMessage[]>([]);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [otherPresence, setOtherPresence] = useState<PresenceState | null>(null);
@@ -47,7 +75,7 @@ export function ChatPage() {
   // prepend fires so the next render can restore scrollTop such that the user
   // stays on the same visible message. Cleared after the adjustment applies.
   const pendingScrollAnchorRef = useRef<number | null>(null);
-  const prevMessagesRef = useRef<Message[]>([]);
+  const prevMessagesRef = useRef<DisplayMessage[]>([]);
 
   // Subscribe to friendship doc to get other user info + validate access
   useEffect(() => {
@@ -84,9 +112,48 @@ export function ChatPage() {
     setLoadingOlder(false);
     setMessages([]);
     setLoadingMessages(true);
+    setPending([]);
     prevMessagesRef.current = [];
     pendingScrollAnchorRef.current = null;
   }, [pairId]);
+
+  // Whenever a server snapshot arrives, drop any pending entries whose id
+  // now exists in the server messages — that means the write succeeded and
+  // the real bubble has taken over.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    setPending((prev) => {
+      if (prev.length === 0) return prev;
+      const serverIds = new Set(messages.map((m) => m.id));
+      const next = prev.filter((p) => !serverIds.has(p.id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [messages]);
+
+  // Merged view: server messages (with timestamps and read receipts) followed
+  // by any optimistic placeholders that haven't been confirmed yet. We
+  // defensively dedup by id in case a pending entry slipped past the cleanup
+  // effect for a render frame. Defined BEFORE the scroll useLayoutEffect so
+  // its dependency array can reference it.
+  const displayMessages = useMemo<DisplayMessage[]>(() => {
+    const serverIds = new Set(messages.map((m) => m.id));
+    const pendingNotInServer = pending.filter((p) => !serverIds.has(p.id));
+    return [
+      ...messages.map((m) => ({
+        id: m.id,
+        senderUid: m.senderUid,
+        text: m.text,
+        createdAt: m.createdAt,
+        readBy: m.readBy,
+      })),
+      ...pendingNotInServer.map((p) => ({
+        id: p.id,
+        senderUid: p.senderUid,
+        text: p.text,
+        pending: { status: p.status },
+      })),
+    ];
+  }, [messages, pending]);
 
   // Subscribe to messages. Re-subscribes whenever msgLimit grows so realtime
   // updates cover every visible message (important for read receipts).
@@ -107,12 +174,14 @@ export function ChatPage() {
 
   // Scroll management:
   //  - First-ever load for this conversation -> jump to bottom.
-  //  - New message appended at the bottom -> scroll to bottom (follow).
+  //  - New message appended at the bottom -> scroll to bottom (follow). This
+  //    fires for both server messages and optimistic pending bubbles, so the
+  //    user always sees their just-sent message immediately.
   //  - Older messages prepended (msgLimit bumped) -> restore scroll offset so
   //    the message the user was looking at stays visually anchored.
   useLayoutEffect(() => {
     const prev = prevMessagesRef.current;
-    const curr = messages;
+    const curr = displayMessages;
     prevMessagesRef.current = curr;
     if (curr.length === 0) return;
 
@@ -138,7 +207,7 @@ export function ChatPage() {
     if (prevLastId !== currLastId) {
       endRef.current?.scrollIntoView({ behavior: "auto" });
     }
-  }, [messages]);
+  }, [displayMessages]);
 
   // Typing bubble appears -> keep the view pinned to the bottom.
   useLayoutEffect(() => {
@@ -225,22 +294,54 @@ export function ChatPage() {
     );
   }
 
-  const handleSend = async (e: React.FormEvent) => {
+  const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || sending) return;
-    setSending(true);
+    const text = input.trim();
+    if (!text) return;
     setError(null);
-    const text = input;
     setInput("");
     typingRef.current?.stop();
-    try {
-      await sendMessage(user, otherUid, text);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "ส่งไม่สำเร็จ");
-      setInput(text); // restore
-    } finally {
-      setSending(false);
-    }
+
+    // Optimistic insert: the bubble appears immediately with status
+    // "กำลังส่ง". The send button re-enables instantly because it is gated
+    // only by `input` content — never by an in-flight request. This is the
+    // fix for the bug where the button stayed disabled while a slow network
+    // request was in flight.
+    const ref = newMessageRef(pairId);
+    const id = ref.id;
+    const placeholder: PendingMessage = {
+      id,
+      senderUid: user.uid,
+      text,
+      localCreatedAt: Date.now(),
+      status: "sending",
+    };
+    setPending((prev) => [...prev, placeholder]);
+
+    sendMessageWithId(user, otherUid, id, text).catch((err) => {
+      console.warn("send failed", err);
+      setPending((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: "failed" } : p)),
+      );
+    });
+  };
+
+  const handleRetry = (id: string) => {
+    const target = pending.find((p) => p.id === id);
+    if (!target) return;
+    setPending((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "sending" } : p)),
+    );
+    sendMessageWithId(user, otherUid, id, target.text).catch((err) => {
+      console.warn("retry failed", err);
+      setPending((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: "failed" } : p)),
+      );
+    });
+  };
+
+  const handleDiscardPending = (id: string) => {
+    setPending((prev) => prev.filter((p) => p.id !== id));
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -314,7 +415,7 @@ export function ChatPage() {
           <div className="flex h-full items-center justify-center">
             <Spinner />
           </div>
-        ) : messages.length === 0 ? (
+        ) : displayMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center text-slate-400 dark:text-slate-500">
             <p className="text-sm">ยังไม่มีข้อความ ทักทายกันได้เลย</p>
           </div>
@@ -329,7 +430,13 @@ export function ChatPage() {
                 จุดเริ่มต้นของการสนทนา
               </div>
             ) : null}
-            <MessagesList messages={messages} myUid={user.uid} otherUid={otherUid} />
+            <MessagesList
+              messages={displayMessages}
+              myUid={user.uid}
+              otherUid={otherUid}
+              onRetry={handleRetry}
+              onDiscard={handleDiscardPending}
+            />
           </>
         )}
         {otherIsTyping && <TypingBubble />}
@@ -364,7 +471,7 @@ export function ChatPage() {
             />
             <button
               type="submit"
-              disabled={!input.trim() || sending}
+              disabled={!input.trim()}
               className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-brand-500 text-white shadow-sm transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="ส่ง"
             >
@@ -421,10 +528,14 @@ function MessagesList({
   messages,
   myUid,
   otherUid,
+  onRetry,
+  onDiscard,
 }: {
-  messages: Message[];
+  messages: DisplayMessage[];
   myUid: string;
   otherUid: string;
+  onRetry: (id: string) => void;
+  onDiscard: (id: string) => void;
 }) {
   return (
     <ul className="space-y-1">
@@ -437,6 +548,20 @@ function MessagesList({
         const sameAsPrev = prev?.senderUid === m.senderUid && !showDateSep;
         const isLastFromMe = isMine && !sameAsNext;
         const readByOther = !!m.readBy?.[otherUid];
+        const isPending = !!m.pending;
+        const isFailed = m.pending?.status === "failed";
+
+        // Status text for my own bubbles. Priority:
+        //   failed  -> ส่งไม่สำเร็จ
+        //   sending -> กำลังส่ง
+        //   read    -> อ่านแล้ว
+        //   sent    -> ส่งแล้ว (only on the last bubble in a streak)
+        let statusLabel: string | null = null;
+        if (isMine) {
+          if (isFailed) statusLabel = "ส่งไม่สำเร็จ";
+          else if (isPending) statusLabel = "กำลังส่ง";
+          else if (isLastFromMe) statusLabel = readByOther ? "อ่านแล้ว" : "ส่งแล้ว";
+        }
 
         return (
           <li key={m.id}>
@@ -451,23 +576,41 @@ function MessagesList({
               <div
                 className={`max-w-[80%] break-words px-3.5 py-2 text-[15px] leading-relaxed shadow-sm ${
                   isMine
-                    ? "bg-brand-500 text-white"
+                    ? isFailed
+                      ? "bg-rose-500 text-white"
+                      : "bg-brand-500 text-white"
                     : "bg-white text-slate-900 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700"
-                } ${bubbleRadius(isMine, sameAsPrev, sameAsNext)}`}
+                } ${isPending && !isFailed ? "opacity-70" : ""} ${bubbleRadius(isMine, sameAsPrev, sameAsNext)}`}
               >
                 <div className="whitespace-pre-wrap">{m.text}</div>
                 <div
                   className={`mt-0.5 flex items-center gap-1 text-[10px] ${
-                    isMine ? "text-white/70 justify-end" : "text-slate-400 dark:text-slate-500"
+                    isMine ? "text-white/80 justify-end" : "text-slate-400 dark:text-slate-500"
                   }`}
                 >
                   <span>{formatTime(m.createdAt)}</span>
-                  {isLastFromMe && (
-                    <span>{readByOther ? "อ่านแล้ว" : "ส่งแล้ว"}</span>
-                  )}
+                  {statusLabel && <span>{statusLabel}</span>}
                 </div>
               </div>
             </div>
+            {isFailed && (
+              <div className="mt-1 flex justify-end gap-3 pr-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => onRetry(m.id)}
+                  className="font-medium text-brand-600 hover:underline dark:text-brand-400"
+                >
+                  ลองใหม่
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDiscard(m.id)}
+                  className="text-slate-500 hover:underline dark:text-slate-400"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            )}
           </li>
         );
       })}
